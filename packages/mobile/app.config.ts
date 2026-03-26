@@ -34,6 +34,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
     scheme: "be.spatie.kaartje",
     plugins: [
+      "./plugins/withGradle8",
       "react-native-edge-to-edge",
       "react-native-vision-camera",
       [

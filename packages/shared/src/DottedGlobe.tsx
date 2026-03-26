@@ -22,6 +22,8 @@ export interface DottedGlobeProps {
   waterOpacity?: number;
   /** Postcard arc destinations */
   arcs?: ArcTarget[];
+  /** Delay in seconds before arcs start animating (default: 0) */
+  arcDelay?: number;
   /** Auto-rotation speed in rad/s (default: 0.1) */
   rotationSpeed?: number;
 }
@@ -310,10 +312,11 @@ export function DottedGlobe({
   dotStep = 1.1,
   radius = 2.5,
   dotColor = "#ede6db",
-  dotSize = 0.45,
+  dotSize = 0.3,
   waterColor = "#87c1c9",
   waterOpacity = 0.15,
   arcs,
+  arcDelay = 0,
   rotationSpeed = 0.1,
 }: DottedGlobeProps = {}) {
   const arcData = arcs ?? MOCK_ARCS;
@@ -321,13 +324,16 @@ export function DottedGlobe({
 
   const landData = useMemo(() => computeLandDots(dotStep, radius), [dotStep, radius]);
 
+  // Set initial rotation so Belgium (lng ~4°) faces the camera
+  const initialRotation = useRef(-(4 - 40) * DEG);
+
   useFrame((_, delta) => {
     groupRef.current.rotation.y += delta * rotationSpeed;
   });
 
   return (
     <group rotation={[0, 0, -11.7 * DEG]}>
-      <group ref={groupRef}>
+      <group ref={groupRef} rotation={[0, initialRotation.current, 0]}>
         <mesh>
           <sphereGeometry args={[radius * 0.99, 64, 64]} />
           <shaderMaterial
@@ -350,7 +356,7 @@ export function DottedGlobe({
           color={dotColor}
           size={dotSize}
         />
-        {arcData.length > 0 && <ArcLayer arcs={arcData} radius={radius} />}
+        {arcData.length > 0 && <ArcLayer arcs={arcData} radius={radius} delay={arcDelay} />}
       </group>
     </group>
   );

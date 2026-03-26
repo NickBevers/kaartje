@@ -11,14 +11,25 @@ const ARC_DURATION = 2.5 // seconds for one arc to draw
 interface ArcLayerProps {
   arcs: ArcTarget[]
   radius: number
+  /** Global delay in seconds before any arcs start */
+  delay?: number
 }
 
-export const ArcLayer = memo(function ArcLayer({ arcs, radius }: ArcLayerProps) {
+export const ArcLayer = memo(function ArcLayer({ arcs, radius, delay = 0 }: ArcLayerProps) {
   const [activeBatch, setActiveBatch] = useState(0)
   const batchTimer = useRef(0)
+  const started = useRef(false)
+  const startTime = useRef(-1)
   const totalBatches = Math.ceil(arcs.length / BATCH_SIZE)
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
+    // Wait for global delay
+    if (!started.current) {
+      if (startTime.current < 0) startTime.current = state.clock.elapsedTime
+      if (state.clock.elapsedTime - startTime.current < delay) return
+      started.current = true
+    }
+
     if (totalBatches <= 1) return
 
     batchTimer.current += delta
@@ -32,7 +43,7 @@ export const ArcLayer = memo(function ArcLayer({ arcs, radius }: ArcLayerProps) 
 
   return (
     <>
-      {arcs.map((arc, i) => {
+      {started.current && arcs.map((arc, i) => {
         const batch = Math.floor(i / BATCH_SIZE)
         const indexInBatch = i % BATCH_SIZE
         const isActive = batch === activeBatch

@@ -5,15 +5,87 @@ import { NetworkSphereView } from '../components/NetworkSphereView';
 
 <Base title="Kaartje">
   <main class="relative min-h-dvh overflow-hidden">
-    <div class="absolute inset-0">
-      <NetworkSphereView client:only="react" />
+    <!-- Spatie logo (top-left, hidden initially) -->
+    <div id="spatie-logo" class="fixed top-8 left-8 z-20 opacity-0 -translate-y-4 pointer-events-none">
+      <img src="https://spatie.be/images/spatie.svg" alt="Spatie" class="h-6 brightness-75 invert" />
     </div>
-    <div class="relative z-10 flex items-center justify-center min-h-dvh pointer-events-none">
-      <div class="text-center">
+
+    <!-- Center text (visible on load, moves to bottom-left) -->
+    <div id="center-text" class="fixed inset-0 z-10 flex items-center justify-center pointer-events-none">
+      <div class="text-center" id="text-inner">
         <p class="font-mono text-sm text-stamp tracking-wider uppercase mb-3">Postcardware</p>
         <h1 class="font-serif text-6xl tracking-tighter mb-4">Kaartje</h1>
         <p class="text-ink-faded text-lg">Postcards from around the world.</p>
       </div>
     </div>
+
+    <!-- Globe -->
+    <div id="globe-container" class="absolute inset-0">
+      <NetworkSphereView client:only="react" />
+    </div>
   </main>
 </Base>
+
+<style>
+  /* Phase 1: text visible in center (default state) */
+  #center-text {
+    transition: all 1.8s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  #text-inner {
+    transition: transform 1.8s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.8s ease-out;
+  }
+
+  /* Phase 2: text moves to bottom-left and shrinks */
+  #center-text.relocated {
+    align-items: flex-end;
+    justify-content: flex-start;
+    padding: 2.5rem;
+  }
+
+  #center-text.relocated #text-inner {
+    transform: scale(0.55);
+    transform-origin: bottom left;
+    text-align: left;
+  }
+
+  /* Phase 2 fade: center text fades out briefly before fading into corner */
+  #center-text.fading #text-inner {
+    opacity: 0;
+  }
+
+  #center-text.relocated #text-inner {
+    opacity: 1;
+  }
+
+  /* Spatie logo animation */
+  #spatie-logo {
+    transition: opacity 1.2s ease-out, transform 1.2s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  #spatie-logo.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+</style>
+
+<script>
+  const centerText = document.getElementById('center-text')!;
+  const spatieLogo = document.getElementById('spatie-logo')!;
+
+  // After 2s: fade out center text
+  setTimeout(() => {
+    centerText.classList.add('fading');
+  }, 2000);
+
+  // After 2.8s: relocate to bottom-left and fade back in
+  setTimeout(() => {
+    centerText.classList.remove('fading');
+    centerText.classList.add('relocated');
+  }, 2800);
+
+  // After 3s: show Spatie logo in top-left
+  setTimeout(() => {
+    spatieLogo.classList.add('visible');
+  }, 3000);
+</script>
