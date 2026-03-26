@@ -11,8 +11,14 @@ const NUM_ORBITS = 2.5;
 const START_SCALE = 1.0;
 const END_SCALE = 0.06;
 
-// Fallback texture
-const FALLBACK_TEXTURE: THREE.Texture = (() => {
+// Fallback texture (web only — document is not available in React Native)
+let FALLBACK_TEXTURE: THREE.Texture | null = null;
+function getFallbackTexture(): THREE.Texture {
+  if (FALLBACK_TEXTURE) return FALLBACK_TEXTURE;
+  if (typeof document === "undefined") {
+    FALLBACK_TEXTURE = new THREE.Texture();
+    return FALLBACK_TEXTURE;
+  }
   const canvas = document.createElement("canvas");
   canvas.width = 128;
   canvas.height = 86;
@@ -26,11 +32,12 @@ const FALLBACK_TEXTURE: THREE.Texture = (() => {
   ctx.font = "bold 24px sans-serif";
   ctx.textAlign = "center";
   ctx.fillText("\u2709", 64, 52);
-  return new THREE.CanvasTexture(canvas);
-})();
+  FALLBACK_TEXTURE = new THREE.CanvasTexture(canvas);
+  return FALLBACK_TEXTURE;
+}
 
 function useTextureSafe(url: string): THREE.Texture {
-  const [texture, setTexture] = useState<THREE.Texture>(FALLBACK_TEXTURE);
+  const [texture, setTexture] = useState<THREE.Texture>(() => getFallbackTexture());
 
   useEffect(() => {
     const loader = new THREE.TextureLoader();

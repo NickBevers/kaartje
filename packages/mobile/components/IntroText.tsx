@@ -7,8 +7,8 @@ import Animated, {
   withDelay,
   withSequence,
   Easing,
-  runOnJS,
 } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 import { StyleSheet } from "react-native-unistyles";
 
 const easeOut = Easing.bezier(0.2, 0.9, 0.1, 1);
@@ -29,7 +29,7 @@ export function IntroText({ onComplete }: IntroTextProps) {
         1500,
         withTiming(0, { duration: 350, easing: easeOut }, (finished) => {
           if (finished && onComplete) {
-            runOnJS(onComplete)();
+            scheduleOnRN(onComplete);
           }
         }),
       ),

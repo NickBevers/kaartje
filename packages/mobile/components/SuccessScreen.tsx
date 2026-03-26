@@ -8,8 +8,8 @@ import Animated, {
   withDelay,
   withSequence,
   Easing,
-  runOnJS,
 } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 import { StyleSheet } from "react-native-unistyles";
 
 const easeOut = Easing.bezier(0.2, 0.9, 0.1, 1);
@@ -29,7 +29,7 @@ export function SuccessScreen({ onComplete }: SuccessScreenProps) {
       withDelay(
         1600,
         withTiming(0, { duration: 350, easing: easeOut }, (finished) => {
-          if (finished) runOnJS(onComplete)();
+          if (finished) scheduleOnRN(onComplete);
         }),
       ),
     );
