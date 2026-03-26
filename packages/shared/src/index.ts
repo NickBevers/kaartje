@@ -1,2 +1,2 @@
-export { NetworkSphere } from './NetworkSphere'
-export type { NetworkSphereProps } from './NetworkSphere'
+export { DottedGlobe } from './DottedGlobe'
+export type { DottedGlobeProps } from './DottedGlobe'

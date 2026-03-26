@@ -1,13 +1,13 @@
 import { Canvas } from '@react-three/fiber'
-import { NetworkSphere } from '@kaartje/shared'
+import { DottedGlobe } from '@kaartje/shared'
 import { View } from 'react-native'
 import { StyleSheet } from 'react-native-unistyles'
 
 export function NetworkSphereView() {
   return (
     <View style={styles.container}>
-      <Canvas camera={{ position: [0, 0, 5], fov: 45 }}>
-        <NetworkSphere />
+      <Canvas camera={{ position: [0, 0, 8], fov: 45 }}>
+        <DottedGlobe />
       </Canvas>
     </View>
   )
