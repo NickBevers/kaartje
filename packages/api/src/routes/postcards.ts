@@ -1,0 +1,140 @@
+import { eq } from "drizzle-orm";
+import { db } from "../db/client";
+import { postcards } from "../db/schema";
+import type { NewPostcard } from "../db/schema";
+import { getPublicUrl } from "../storage/s3";
+import { broadcast } from "../ws/handler";
+import { coordsForCountry } from "../geo";
+
+export async function listPostcards(_req: Request): Promise<Response> {
+	const url = new URL(_req.url);
+	const status = url.searchParams.get("status");
+
+	const rows = status
+		? await db
+				.select()
+				.from(postcards)
+				.where(eq(postcards.status, status as "scanned" | "arriving" | "landed"))
+		: await db.select().from(postcards);
+
+	const result = rows.map((row) => ({
+		...row,
+		frontImageUrl: getPublicUrl(row.frontImageKey),
+		backImageUrl: row.backImageKey ? getPublicUrl(row.backImageKey) : null,
+	}));
+
+	return Response.json(result);
+}
+
+export async function getPostcard(id: string): Promise<Response> {
+	const [row] = await db
+		.select()
+		.from(postcards)
+		.where(eq(postcards.id, id));
+
+	if (!row) {
+		return Response.json({ error: "Postcard not found" }, { status: 404 });
+	}
+
+	return Response.json({
+		...row,
+		frontImageUrl: getPublicUrl(row.frontImageKey),
+		backImageUrl: row.backImageKey ? getPublicUrl(row.backImageKey) : null,
+	});
+}
+
+export async function createPostcard(req: Request): Promise<Response> {
+	const body = (await req.json()) as {
+		frontImageKey: string;
+		backImageKey?: string;
+		message?: string;
+		senderName?: string;
+		country?: string;
+		latitude?: number;
+		longitude?: number;
+	};
+
+	if (!body.frontImageKey) {
+		return Response.json(
+			{ error: "frontImageKey is required" },
+			{ status: 400 },
+		);
+	}
+
+	// Fall back to country-based coords if lat/lng not provided
+	let { latitude, longitude } = body;
+	if (latitude == null || longitude == null) {
+		const coords = body.country ? coordsForCountry(body.country) : null;
+		if (coords) {
+			latitude = coords.latitude;
+			longitude = coords.longitude;
+		}
+	}
+
+	const id = crypto.randomUUID();
+	const newPostcard: NewPostcard = {
+		id,
+		frontImageKey: body.frontImageKey,
+		backImageKey: body.backImageKey ?? null,
+		message: body.message ?? null,
+		senderName: body.senderName ?? null,
+		country: body.country ?? null,
+		latitude: latitude ?? null,
+		longitude: longitude ?? null,
+		status: "scanned",
+	};
+
+	await db.insert(postcards).values(newPostcard);
+
+	const [created] = await db
+		.select()
+		.from(postcards)
+		.where(eq(postcards.id, id));
+
+	broadcast({ event: "card:scanned", data: { postcard: created } });
+
+	return Response.json(
+		{
+			...created,
+			frontImageUrl: getPublicUrl(created.frontImageKey),
+			backImageUrl: created.backImageKey
+				? getPublicUrl(created.backImageKey)
+				: null,
+		},
+		{ status: 201 },
+	);
+}
+
+export async function updatePostcardStatus(
+	id: string,
+	req: Request,
+): Promise<Response> {
+	const body = (await req.json()) as { status: "arriving" | "landed" };
+
+	if (!body.status || !["arriving", "landed"].includes(body.status)) {
+		return Response.json(
+			{ error: 'status must be "arriving" or "landed"' },
+			{ status: 400 },
+		);
+	}
+
+	const [existing] = await db
+		.select()
+		.from(postcards)
+		.where(eq(postcards.id, id));
+
+	if (!existing) {
+		return Response.json({ error: "Postcard not found" }, { status: 404 });
+	}
+
+	await db
+		.update(postcards)
+		.set({ status: body.status })
+		.where(eq(postcards.id, id));
+
+	const event =
+		body.status === "arriving" ? "card:arriving" : "card:landed";
+	broadcast({ event, data: { postcardId: id } });
+
+	return Response.json({ ...existing, status: body.status });
+}

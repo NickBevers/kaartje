@@ -12,6 +12,7 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import { StyleSheet } from "react-native-unistyles";
+import { NetworkSphereView } from "../components/NetworkSphereView";
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 
@@ -45,6 +46,9 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
+      <View style={styles.sphere}>
+        <NetworkSphereView />
+      </View>
       <Animated.View style={[styles.content, animatedStyle]}>
         <Text style={styles.label}>Postcardware</Text>
         <Text style={styles.title}>Kaartje</Text>
@@ -53,7 +57,7 @@ export default function HomeScreen() {
       <AnimatedBlurView
         animatedProps={blurProps}
         tint="dark"
-        style={styles.overlay}
+        style={styles.blurOverlay}
       />
       <StatusBar style="light" />
     </View>
@@ -67,10 +71,14 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     justifyContent: "center",
   },
+  sphere: {
+    position: "absolute",
+    inset: 0,
+  },
   content: {
     alignItems: "center",
   },
-  overlay: {
+  blurOverlay: {
     position: "absolute",
     inset: 0,
   },

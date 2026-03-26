@@ -9,6 +9,7 @@
     "prebuild:clean": "expo prebuild --clean"
   },
   "dependencies": {
+    "@kaartje/shared": "*",
     "@react-three/fiber": "^9.5.0",
     "expo": "~55.0.8",
     "expo-blur": "^55.0.10",
