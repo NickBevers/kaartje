@@ -32,6 +32,22 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       favicon: "./assets/favicon.png",
     },
     scheme: "be.spatie.kaartje",
-    plugins: ["react-native-edge-to-edge", "react-native-vision-camera"],
+    plugins: [
+      "react-native-edge-to-edge",
+      "react-native-vision-camera",
+      [
+        "expo-font",
+        {
+          fonts: [
+            "./assets/fonts/DMSans-Regular.ttf",
+            "./assets/fonts/DMSans-Medium.ttf",
+            "./assets/fonts/DMSans-SemiBold.ttf",
+            "./assets/fonts/DMSans-Bold.ttf",
+            "./assets/fonts/DMSans-Italic.ttf",
+            "./assets/fonts/DMSerifDisplay-Regular.ttf",
+          ],
+        },
+      ],
+    ],
   };
 };
