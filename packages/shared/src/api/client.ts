@@ -79,6 +79,21 @@ export class ApiClient {
     });
   }
 
+  async uploadFile(presignedUrl: string, fileUri: string, contentType: string): Promise<void> {
+    const res = await fetch(fileUri);
+    const blob = await res.blob();
+
+    const upload = await fetch(presignedUrl, {
+      method: "PUT",
+      headers: { "Content-Type": contentType },
+      body: blob,
+    });
+
+    if (!upload.ok) {
+      throw new ApiError(upload.status, "Upload failed");
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // WebSocket
   // ---------------------------------------------------------------------------

@@ -30,7 +30,9 @@ export function CameraPermission({ onPermissionGranted }: CameraPermissionProps)
     const status = Camera.getCameraPermissionStatus();
     if (status === "denied") setPermissionState("denied");
     else if (status === "restricted") setPermissionState("restricted");
+  }, []);
 
+  useEffect(() => {
     opacity.value = withTiming(1, { duration: 400, easing: easeOut });
     translateY.value = withTiming(0, { duration: 400, easing: easeOut });
   }, []);

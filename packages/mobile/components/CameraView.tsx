@@ -1,7 +1,6 @@
-import { useRef, useState } from "react";
-import { Dimensions, Pressable, Text, View } from "react-native";
+import { useRef, useState, useMemo } from "react";
+import { Pressable, Text, View, useWindowDimensions } from "react-native";
 import Svg, { Path } from "react-native-svg";
-import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import { X, Zap, ZapOff } from "lucide-react-native";
 import { Camera, useCameraDevice, type PhotoFile } from "react-native-vision-camera";
 import Animated, {
@@ -15,26 +14,28 @@ import { IconButton } from "./IconButton";
 
 const easeOut = Easing.bezier(0.2, 0.9, 0.1, 1);
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const VIEWFINDER_PADDING = 24;
-const VIEWFINDER_WIDTH = SCREEN_WIDTH - VIEWFINDER_PADDING * 2;
-const VIEWFINDER_HEIGHT = VIEWFINDER_WIDTH * (2 / 3);
-const VIEWFINDER_TOP = (SCREEN_HEIGHT - VIEWFINDER_HEIGHT) / 2 - 40;
 const CORNER_SIZE = 24;
 const CORNER_THICKNESS = 3;
 const OVERLAY_COLOR = "rgba(10, 10, 12, 0.6)";
 const RADIUS = 16;
 
-function buildCutoutPath() {
+function buildCutoutPath(
+  screenW: number,
+  screenH: number,
+  vfTop: number,
+  vfWidth: number,
+  vfHeight: number,
+) {
   const x = VIEWFINDER_PADDING;
-  const y = VIEWFINDER_TOP;
-  const w = VIEWFINDER_WIDTH;
-  const h = VIEWFINDER_HEIGHT;
+  const y = vfTop;
+  const w = vfWidth;
+  const h = vfHeight;
   const r = RADIUS;
 
   // Outer rect (full screen) + inner rounded rect (cutout via evenodd)
   return [
-    `M0,0 H${SCREEN_WIDTH} V${SCREEN_HEIGHT} H0 Z`,
+    `M0,0 H${screenW} V${screenH} H0 Z`,
     `M${x + r},${y}`,
     `H${x + w - r}`,
     `Q${x + w},${y} ${x + w},${y + r}`,
@@ -58,6 +59,25 @@ export function CameraView({ title, onDismiss, onPhotoTaken }: CameraViewProps) 
   const cameraRef = useRef<Camera>(null);
   const device = useCameraDevice("back");
   const [flash, setFlash] = useState<"off" | "on">("off");
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+
+  const vfWidth = screenWidth - VIEWFINDER_PADDING * 2;
+  const vfHeight = vfWidth * (2 / 3);
+  const vfTop = (screenHeight - vfHeight) / 2 - 40;
+
+  const cutoutPath = useMemo(
+    () => buildCutoutPath(screenWidth, screenHeight, vfTop, vfWidth, vfHeight),
+    [screenWidth, screenHeight, vfTop, vfWidth, vfHeight],
+  );
+
+  const readyOpacity = useSharedValue(0);
+  const readyStyle = useAnimatedStyle(() => ({
+    opacity: readyOpacity.value,
+  }));
+
+  const handleCameraInitialized = () => {
+    readyOpacity.value = withTiming(1, { duration: 1500, easing: easeOut });
+  };
 
   const captureScale = useSharedValue(1);
   const captureAnimatedStyle = useAnimatedStyle(() => ({
@@ -68,63 +88,17 @@ export function CameraView({ title, onDismiss, onPhotoTaken }: CameraViewProps) 
     if (!cameraRef.current) return;
     const photo = await cameraRef.current.takePhoto({ flash });
 
-    // Determine rotation needed based on sensor orientation.
-    // The sensor captures in landscape; we need portrait.
-    let rotation = 0;
-    if (photo.orientation === "landscape-right") rotation = 90;
-    else if (photo.orientation === "landscape-left") rotation = -90;
-    else if (photo.orientation === "portrait-upside-down") rotation = 180;
+    // VisionCamera reports raw sensor dimensions (always landscape).
+    // Correct to post-EXIF dimensions for downstream consumers.
+    const needsSwap =
+      photo.orientation === "landscape-left" ||
+      photo.orientation === "landscape-right";
 
-    // Display dimensions after rotation
-    const rotated = rotation === 90 || rotation === -90;
-    const displayW = rotated ? photo.height : photo.width;
-    const displayH = rotated ? photo.width : photo.height;
-
-    // Map viewfinder screen coords to rotated photo pixel coords.
-    // Camera preview uses "cover" mode.
-    const displayAspect = displayW / displayH;
-    const screenAspect = SCREEN_WIDTH / SCREEN_HEIGHT;
-
-    let visibleWidth: number;
-    let visibleHeight: number;
-    let offsetX: number;
-    let offsetY: number;
-
-    if (displayAspect > screenAspect) {
-      visibleHeight = displayH;
-      visibleWidth = displayH * screenAspect;
-      offsetX = (displayW - visibleWidth) / 2;
-      offsetY = 0;
-    } else {
-      visibleWidth = displayW;
-      visibleHeight = displayW / screenAspect;
-      offsetX = 0;
-      offsetY = (displayH - visibleHeight) / 2;
-    }
-
-    const scaleX = visibleWidth / SCREEN_WIDTH;
-    const scaleY = visibleHeight / SCREEN_HEIGHT;
-
-    const crop = {
-      originX: Math.round(offsetX + VIEWFINDER_PADDING * scaleX),
-      originY: Math.round(offsetY + VIEWFINDER_TOP * scaleY),
-      width: Math.round(VIEWFINDER_WIDTH * scaleX),
-      height: Math.round(VIEWFINDER_HEIGHT * scaleY),
-    };
-
-    // Rotate and crop in two steps to ensure crop coords apply to the rotated image
-    let uri = `file://${photo.path}`;
-
-    if (rotation !== 0) {
-      const rotatedRef = await ImageManipulator.manipulate(uri).rotate(rotation).renderAsync();
-      const rotated = await rotatedRef.saveAsync({ format: SaveFormat.JPEG, compress: 0.95 });
-      uri = rotated.uri;
-    }
-
-    const croppedRef = await ImageManipulator.manipulate(uri).crop(crop).renderAsync();
-    const cropped = await croppedRef.saveAsync({ format: SaveFormat.JPEG, compress: 0.9 });
-
-    onPhotoTaken({ ...photo, path: cropped.uri, width: crop.width, height: crop.height });
+    onPhotoTaken({
+      ...photo,
+      width: needsSwap ? photo.height : photo.width,
+      height: needsSwap ? photo.width : photo.height,
+    });
   };
 
   const handleCapturePressIn = () => {
@@ -139,63 +113,82 @@ export function CameraView({ title, onDismiss, onPhotoTaken }: CameraViewProps) 
 
   return (
     <View style={styles.container}>
-      <Camera ref={cameraRef} style={styles.camera} device={device} isActive={true} photo={true} />
+      <Camera
+        ref={cameraRef}
+        style={styles.camera}
+        device={device}
+        isActive={true}
+        photo={true}
+        onInitialized={handleCameraInitialized}
+      />
 
-      {/* Instruction text */}
-      {title && (
-        <View style={styles.titleContainer} pointerEvents="none">
-          <Text style={styles.title}>{title}</Text>
-        </View>
-      )}
+      <Animated.View style={[styles.ui, readyStyle]}>
+        {/* Instruction text */}
+        {title && (
+          <View style={[styles.titleContainer, { top: vfTop - 48 }]} pointerEvents="none">
+            <Text style={styles.title}>{title}</Text>
+          </View>
+        )}
 
-      {/* Dark overlay with rounded cutout */}
-      <View style={styles.overlay} pointerEvents="none">
-        <Svg width={SCREEN_WIDTH} height={SCREEN_HEIGHT}>
-          <Path d={buildCutoutPath()} fill={OVERLAY_COLOR} fillRule="evenodd" />
-        </Svg>
+        {/* Dark overlay with rounded cutout */}
+        <View style={styles.overlay} pointerEvents="none">
+          <Svg width={screenWidth} height={screenHeight}>
+            <Path d={cutoutPath} fill={OVERLAY_COLOR} fillRule="evenodd" />
+          </Svg>
 
-        {/* Viewfinder border + corner marks */}
-        <View style={styles.viewfinder}>
-          <View style={[styles.corner, styles.cornerTopLeft]} />
-          <View style={[styles.corner, styles.cornerTopRight]} />
-          <View style={[styles.corner, styles.cornerBottomLeft]} />
-          <View style={[styles.corner, styles.cornerBottomRight]} />
-        </View>
-      </View>
-
-      {/* Controls */}
-      <View style={styles.controls}>
-        <IconButton
-          icon={<X size={22} color="#ede6db" />}
-          variant="outline"
-          size={48}
-          onPress={onDismiss}
-        />
-
-        <Animated.View style={captureAnimatedStyle}>
-          <Pressable
-            style={styles.captureButton}
-            onPress={handleCapture}
-            onPressIn={handleCapturePressIn}
-            onPressOut={handleCapturePressOut}
+          {/* Viewfinder border + corner marks */}
+          <View
+            style={[
+              styles.viewfinder,
+              {
+                top: vfTop,
+                left: VIEWFINDER_PADDING,
+                width: vfWidth,
+                height: vfHeight,
+              },
+            ]}
           >
-            <View style={styles.captureInner} />
-          </Pressable>
-        </Animated.View>
+            <View style={[styles.corner, styles.cornerTopLeft]} />
+            <View style={[styles.corner, styles.cornerTopRight]} />
+            <View style={[styles.corner, styles.cornerBottomLeft]} />
+            <View style={[styles.corner, styles.cornerBottomRight]} />
+          </View>
+        </View>
 
-        <IconButton
-          icon={
-            flash === "off" ? (
-              <ZapOff size={22} color="#9b9489" />
-            ) : (
-              <Zap size={22} color="#c49a3c" />
-            )
-          }
-          variant="ghost"
-          size={48}
-          onPress={() => setFlash((f) => (f === "off" ? "on" : "off"))}
-        />
-      </View>
+        {/* Controls */}
+        <View style={styles.controls}>
+          <IconButton
+            icon={<X size={22} color="#ede6db" />}
+            variant="outline"
+            size={48}
+            onPress={onDismiss}
+          />
+
+          <Animated.View style={captureAnimatedStyle}>
+            <Pressable
+              style={styles.captureButton}
+              onPress={handleCapture}
+              onPressIn={handleCapturePressIn}
+              onPressOut={handleCapturePressOut}
+            >
+              <View style={styles.captureInner} />
+            </Pressable>
+          </Animated.View>
+
+          <IconButton
+            icon={
+              flash === "off" ? (
+                <ZapOff size={22} color="#9b9489" />
+              ) : (
+                <Zap size={22} color="#c49a3c" />
+              )
+            }
+            variant="ghost"
+            size={48}
+            onPress={() => setFlash((f) => (f === "off" ? "on" : "off"))}
+          />
+        </View>
+      </Animated.View>
     </View>
   );
 }
@@ -204,8 +197,13 @@ const styles = StyleSheet.create((theme, rt) => ({
   container: {
     position: "absolute",
     inset: 0,
+    backgroundColor: "#000",
   },
   camera: {
+    position: "absolute",
+    inset: 0,
+  },
+  ui: {
     position: "absolute",
     inset: 0,
   },
@@ -213,7 +211,6 @@ const styles = StyleSheet.create((theme, rt) => ({
   // Title
   titleContainer: {
     position: "absolute",
-    top: VIEWFINDER_TOP - 48,
     left: 0,
     right: 0,
     alignItems: "center",
@@ -233,10 +230,6 @@ const styles = StyleSheet.create((theme, rt) => ({
   },
   viewfinder: {
     position: "absolute",
-    top: VIEWFINDER_TOP,
-    left: VIEWFINDER_PADDING,
-    width: VIEWFINDER_WIDTH,
-    height: VIEWFINDER_HEIGHT,
     borderRadius: RADIUS,
   },
 

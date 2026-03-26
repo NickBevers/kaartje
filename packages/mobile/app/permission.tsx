@@ -1,19 +1,15 @@
 import { StatusBar } from "expo-status-bar";
 import { View } from "react-native";
 import { router } from "expo-router";
-import { Camera } from "react-native-vision-camera";
 import { StyleSheet } from "react-native-unistyles";
-import { NetworkSphereView } from "../components/NetworkSphereView";
+import { CameraPermission } from "../components/CameraPermission";
 
-export default function IntroScreen() {
-  const handleComplete = () => {
-    const status = Camera.getCameraPermissionStatus();
-    router.replace(status === "granted" ? "/camera-front" : "/permission");
-  };
-
+export default function PermissionScreen() {
   return (
     <View style={styles.container}>
-      <NetworkSphereView onComplete={handleComplete} />
+      <CameraPermission
+        onPermissionGranted={() => router.replace("/camera-front")}
+      />
       <StatusBar style="light" />
     </View>
   );
@@ -23,5 +19,7 @@ const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
     backgroundColor: theme.colors.night,
+    alignItems: "center",
+    justifyContent: "center",
   },
 }));
