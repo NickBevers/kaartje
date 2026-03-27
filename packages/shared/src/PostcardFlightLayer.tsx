@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import * as THREE from "three";
+import { TextureLoader, CanvasTexture, DoubleSide, Quaternion, Vector3 } from "three";
+import type { Mesh, Texture, ShaderMaterial } from "three";
 import { PostcardFlight } from "./PostcardFlight";
 import { latLngToVec3 } from "./geo";
 import type { LiveCard } from "./types";
@@ -50,14 +51,14 @@ export interface StampHoverData {
 
 /** Shared stamp logic — billboard, fade, hover/click */
 function useStamp(card: LiveCard, radius: number) {
-  const meshRef = useRef<THREE.Mesh>(null!);
-  const [texture, setTexture] = useState<THREE.Texture | null>(null);
+  const meshRef = useRef<Mesh>(null!);
+  const [texture, setTexture] = useState<Texture | null>(null);
   const currentScale = useRef(1);
   const targetScale = useRef(1);
   const pinned = useRef(false);
   const camera = useThree((s) => s.camera);
-  const parentInvQuat = useRef(new THREE.Quaternion());
-  const worldPos = useRef(new THREE.Vector3());
+  const parentInvQuat = useRef(new Quaternion());
+  const worldPos = useRef(new Vector3());
 
   const position = latLngToVec3(card.latitude, card.longitude, radius * 1.01);
 
@@ -71,12 +72,12 @@ function useStamp(card: LiveCard, radius: number) {
   };
 
   const uniforms = useRef({
-    uMap: { value: null as THREE.Texture | null },
+    uMap: { value: null as Texture | null },
     uOpacity: { value: 1.0 },
   }).current;
 
   useEffect(() => {
-    const loader = new THREE.TextureLoader();
+    const loader = new TextureLoader();
     loader.setCrossOrigin("anonymous");
     loader.load(
       card.frontImageUrl,
@@ -93,7 +94,7 @@ function useStamp(card: LiveCard, radius: number) {
         const ctx = canvas.getContext("2d")!;
         ctx.fillStyle = "#c45a3c";
         ctx.fillRect(0, 0, 32, 22);
-        const fallback = new THREE.CanvasTexture(canvas);
+        const fallback = new CanvasTexture(canvas);
         setTexture(fallback);
         uniforms.uMap.value = fallback;
       },
@@ -175,7 +176,7 @@ export function PersistentCardStamp({
         fragmentShader={stampFragment}
         uniforms={uniforms}
         transparent
-        side={THREE.DoubleSide}
+        side={DoubleSide}
       />
     </mesh>
   );
@@ -258,7 +259,7 @@ export function LandedCardStamp({
         fragmentShader={stampFragment}
         uniforms={uniforms}
         transparent
-        side={THREE.DoubleSide}
+        side={DoubleSide}
       />
     </mesh>
   );
@@ -274,7 +275,7 @@ export function PostcardFlightLayer({ cards, radius, onCardLanded }: PostcardFli
   const landedIds = useRef<Set<string>>(new Set());
 
   const handleLanded = useCallback(
-    (card: LiveCard, _worldPos: THREE.Vector3, clockTime: number) => {
+    (card: LiveCard, _worldPos: Vector3, clockTime: number) => {
       landedIds.current.add(card.id);
       onCardLanded(card, clockTime);
     },

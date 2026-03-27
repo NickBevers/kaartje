@@ -1,4 +1,4 @@
-import * as THREE from "three";
+import { Texture, CanvasTexture } from "three";
 
 const CARD_W = 600;
 const CARD_H = 400;
@@ -43,9 +43,9 @@ export function createBackTexture(opts?: {
   senderName?: string;
   message?: string;
   country?: string;
-}): THREE.CanvasTexture | THREE.Texture {
+}): CanvasTexture | Texture {
   if (typeof document === "undefined") {
-    return new THREE.Texture();
+    return new Texture();
   }
 
   const canvas = document.createElement("canvas");
@@ -132,16 +132,16 @@ export function createBackTexture(opts?: {
   // Address lines
   drawAddressLines(ctx, rightX, CARD_H - PAD - 130, rightW);
 
-  // Spatie details on the lines
+  // Spatie details above the lines
   ctx.font = '15px "DM Sans", sans-serif';
   ctx.fillStyle = TEXT_COLOR;
   ctx.textAlign = "left";
-  const startY = CARD_H - PAD - 127;
+  const lineStartY = CARD_H - PAD - 130;
   for (let i = 0; i < SPATIE_LINES.length; i++) {
-    ctx.fillText(SPATIE_LINES[i], rightX + 2, startY + i * 32);
+    ctx.fillText(SPATIE_LINES[i], rightX + 2, lineStartY + i * 32 - 4);
   }
 
-  const tex = new THREE.CanvasTexture(canvas);
+  const tex = new CanvasTexture(canvas);
   tex.needsUpdate = true;
   return tex;
 }

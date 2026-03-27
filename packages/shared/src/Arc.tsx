@@ -1,6 +1,7 @@
 import { useRef, useMemo, useEffect } from "react";
 import { useFrame } from "@react-three/fiber";
-import * as THREE from "three";
+import { Color, Vector3, CubicBezierCurve3, TubeGeometry, DoubleSide } from "three";
+import type { Mesh, ShaderMaterial } from "three";
 import { arcVertex, arcFragment } from "./arc-shaders";
 import { latLngToVec3 } from "./geo";
 
@@ -8,8 +9,8 @@ const ORIGIN_LAT = 51.2194;
 const ORIGIN_LNG = 4.4025;
 const DURATION = 2.5; // seconds for full arc animation
 
-const COLOR_START = new THREE.Color("#c45a3c");
-const COLOR_MID = new THREE.Color("#ede6db");
+const COLOR_START = new Color("#c45a3c");
+const COLOR_MID = new Color("#ede6db");
 
 interface ArcProps {
   latitude: number;
@@ -19,30 +20,30 @@ interface ArcProps {
   dimmed: boolean;
 }
 
-function buildArcCurve(destLat: number, destLng: number, radius: number): THREE.CubicBezierCurve3 {
-  const p0 = new THREE.Vector3(...latLngToVec3(ORIGIN_LAT, ORIGIN_LNG, radius));
-  const p3 = new THREE.Vector3(...latLngToVec3(destLat, destLng, radius));
+function buildArcCurve(destLat: number, destLng: number, radius: number): CubicBezierCurve3 {
+  const p0 = new Vector3(...latLngToVec3(ORIGIN_LAT, ORIGIN_LNG, radius));
+  const p3 = new Vector3(...latLngToVec3(destLat, destLng, radius));
 
   // Arc height scales with angular distance
   const angularDist = p0.angleTo(p3);
   const liftHeight = radius + 0.15 + angularDist * 0.35;
 
   // Control points at 1/3 and 2/3 along chord, lifted outward
-  const p1 = new THREE.Vector3().lerpVectors(p0, p3, 0.33).normalize().multiplyScalar(liftHeight);
-  const p2 = new THREE.Vector3().lerpVectors(p0, p3, 0.67).normalize().multiplyScalar(liftHeight);
+  const p1 = new Vector3().lerpVectors(p0, p3, 0.33).normalize().multiplyScalar(liftHeight);
+  const p2 = new Vector3().lerpVectors(p0, p3, 0.67).normalize().multiplyScalar(liftHeight);
 
-  return new THREE.CubicBezierCurve3(p0, p1, p2, p3);
+  return new CubicBezierCurve3(p0, p1, p2, p3);
 }
 
 export function Arc({ latitude, longitude, radius, delay, dimmed }: ArcProps) {
-  const meshRef = useRef<THREE.Mesh>(null!);
-  const materialRef = useRef<THREE.ShaderMaterial>(null!);
-  const cardRef = useRef<THREE.Mesh>(null!);
+  const meshRef = useRef<Mesh>(null!);
+  const materialRef = useRef<ShaderMaterial>(null!);
+  const cardRef = useRef<Mesh>(null!);
   const startTime = useRef(-1);
 
   const { curve, geometry, totalIndices } = useMemo(() => {
     const c = buildArcCurve(latitude, longitude, radius);
-    const geo = new THREE.TubeGeometry(c, 64, 0.008, 4, false);
+    const geo = new TubeGeometry(c, 64, 0.008, 4, false);
     return {
       curve: c,
       geometry: geo,
@@ -119,7 +120,7 @@ export function Arc({ latitude, longitude, radius, delay, dimmed }: ArcProps) {
           uniforms={uniforms}
           transparent
           depthWrite={false}
-          side={THREE.DoubleSide}
+          side={DoubleSide}
         />
       </mesh>
 
@@ -129,7 +130,7 @@ export function Arc({ latitude, longitude, radius, delay, dimmed }: ArcProps) {
           color="#ede6db"
           transparent
           opacity={0.9}
-          side={THREE.DoubleSide}
+          side={DoubleSide}
           depthWrite={false}
         />
       </mesh>

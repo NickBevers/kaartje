@@ -1,6 +1,7 @@
 import { useRef, useMemo, useState, useEffect } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import * as THREE from "three";
+import { Texture, CanvasTexture, TextureLoader, Vector3, DoubleSide } from "three";
+import type { Mesh, ShaderMaterial } from "three";
 import { postcardFlightVertex, postcardFlightFragment } from "./postcard-flight-shaders";
 import { latLngToVec3 } from "./geo";
 import { createBackTexture } from "./postcard-back";
@@ -11,11 +12,11 @@ const START_SCALE = 0.8;
 const END_SCALE = 0.06;
 
 // Fallback texture (web only — document is not available in React Native)
-let FALLBACK_TEXTURE: THREE.Texture | null = null;
-function getFallbackTexture(): THREE.Texture {
+let FALLBACK_TEXTURE: Texture | null = null;
+function getFallbackTexture(): Texture {
   if (FALLBACK_TEXTURE) return FALLBACK_TEXTURE;
   if (typeof document === "undefined") {
-    FALLBACK_TEXTURE = new THREE.Texture();
+    FALLBACK_TEXTURE = new Texture();
     return FALLBACK_TEXTURE;
   }
   const canvas = document.createElement("canvas");
@@ -31,15 +32,15 @@ function getFallbackTexture(): THREE.Texture {
   ctx.font = "bold 24px sans-serif";
   ctx.textAlign = "center";
   ctx.fillText("\u2709", 64, 52);
-  FALLBACK_TEXTURE = new THREE.CanvasTexture(canvas);
+  FALLBACK_TEXTURE = new CanvasTexture(canvas);
   return FALLBACK_TEXTURE;
 }
 
-function useTextureSafe(url: string): THREE.Texture {
-  const [texture, setTexture] = useState<THREE.Texture>(() => getFallbackTexture());
+function useTextureSafe(url: string): Texture {
+  const [texture, setTexture] = useState<Texture>(() => getFallbackTexture());
 
   useEffect(() => {
-    const loader = new THREE.TextureLoader();
+    const loader = new TextureLoader();
     loader.setCrossOrigin("anonymous");
     loader.load(
       url,
@@ -70,7 +71,7 @@ interface PostcardFlightProps {
   senderName?: string;
   message?: string;
   country?: string;
-  onLanded: (worldPosition: THREE.Vector3, clockTime: number) => void;
+  onLanded: (worldPosition: Vector3, clockTime: number) => void;
 }
 
 export function PostcardFlight({
@@ -84,8 +85,8 @@ export function PostcardFlight({
   country,
   onLanded,
 }: PostcardFlightProps) {
-  const meshRef = useRef<THREE.Mesh>(null!);
-  const materialRef = useRef<THREE.ShaderMaterial>(null!);
+  const meshRef = useRef<Mesh>(null!);
+  const materialRef = useRef<ShaderMaterial>(null!);
   const startTime = useRef(-1);
   const landed = useRef(false);
 
@@ -101,7 +102,7 @@ export function PostcardFlight({
   const seed = useMemo(() => hashSeed(id), [id]);
 
   const landingPos = useMemo(
-    () => new THREE.Vector3(...latLngToVec3(latitude, longitude, radius)),
+    () => new Vector3(...latLngToVec3(latitude, longitude, radius)),
     [latitude, longitude, radius],
   );
 
@@ -120,7 +121,7 @@ export function PostcardFlight({
     const sin = Math.sin(offsetAngle);
     // Vary Y offset: spread from -0.4 to +0.4 based on seed
     const yOffset = (seed - 0.5) * 0.8;
-    const offsetDir = new THREE.Vector3(
+    const offsetDir = new Vector3(
       landDir.x * cos + landDir.z * sin,
       landDir.y + yOffset,
       -landDir.x * sin + landDir.z * cos,
@@ -191,7 +192,7 @@ export function PostcardFlight({
         vertexShader={postcardFlightVertex}
         fragmentShader={postcardFlightFragment}
         uniforms={uniforms}
-        side={THREE.DoubleSide}
+        side={DoubleSide}
       />
     </mesh>
   );

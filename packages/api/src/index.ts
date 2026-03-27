@@ -5,7 +5,7 @@ import {
   updatePostcardStatus,
   deletePostcard,
 } from "./routes/postcards";
-import { handlePresign } from "./routes/uploads";
+import { handlePresign, handleUpload } from "./routes/uploads";
 import { websocket, broadcast } from "./ws/handler";
 
 const port = Number(process.env.PORT) || 3000;
@@ -82,6 +82,31 @@ const server = Bun.serve({
       // POST /uploads/presign
       if (pathname === "/uploads/presign" && method === "POST") {
         return handlePresign(req);
+      }
+
+      // POST /uploads — direct upload with AVIF conversion
+      if (pathname === "/uploads" && method === "POST") {
+        return handleUpload(req);
+      }
+
+      // GET /images/* — proxy MinIO images with CORS headers
+      if (pathname.startsWith("/images/") && method === "GET") {
+        const key = pathname.slice("/images/".length);
+        // Always fetch from MinIO on localhost (S3_ENDPOINT may be a LAN IP for external clients)
+        const s3Endpoint = process.env.S3_INTERNAL_ENDPOINT ?? "http://127.0.0.1:9000";
+        const s3Bucket = process.env.S3_BUCKET ?? "kaartje-postcards";
+        const upstreamUrl = `${s3Endpoint}/${s3Bucket}/${key}`;
+        const upstream = await fetch(upstreamUrl);
+        if (!upstream.ok) {
+          console.warn(`[images] ${upstream.status} for ${upstreamUrl}`);
+          return Response.json({ error: "Image not found" }, { status: 404 });
+        }
+        return new Response(upstream.body, {
+          headers: {
+            "Content-Type": upstream.headers.get("Content-Type") ?? "image/jpeg",
+            "Cache-Control": "public, max-age=31536000, immutable",
+          },
+        });
       }
 
       // GET /postcards

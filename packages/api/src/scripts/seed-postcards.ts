@@ -1,10 +1,53 @@
 // Run with: bun packages/api/src/scripts/seed-postcards.ts
 
+import { S3Client, PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import sharp from "sharp";
+
 const API_URL = process.env.API_URL ?? "http://localhost:3000";
 
-// Each seeded card gets a unique picsum image (seed ensures consistent images across re-runs)
-function imageUrlForIndex(i: number): string {
-  return `https://picsum.photos/seed/kaartje${i}/400/267`;
+const s3 = new S3Client({
+  endpoint: process.env.S3_ENDPOINT ?? "http://localhost:9000",
+  region: process.env.S3_REGION ?? "us-east-1",
+  credentials: {
+    accessKeyId: process.env.S3_ACCESS_KEY_ID ?? "minioadmin",
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY ?? "minioadmin",
+  },
+  forcePathStyle: true,
+});
+const S3_BUCKET = process.env.S3_BUCKET ?? "kaartje-postcards";
+
+/** Download image from picsum, convert to AVIF, upload to MinIO. Returns the S3 key. */
+async function ensureImage(index: number): Promise<string> {
+  const key = `seed/card-${index}.avif`;
+
+  // Skip if already uploaded
+  try {
+    await s3.send(new HeadObjectCommand({ Bucket: S3_BUCKET, Key: key }));
+    return key;
+  } catch {
+    // Not found — download, convert, and upload
+  }
+
+  const url = `https://picsum.photos/seed/kaartje${index}/400/267`;
+  const res = await fetch(url, { redirect: "follow" });
+  if (!res.ok) throw new Error(`Failed to fetch image ${index}: ${res.status}`);
+  const jpegBuffer = Buffer.from(await res.arrayBuffer());
+
+  // Convert to AVIF (40-50% smaller than JPEG at similar quality)
+  const avifBuffer = await sharp(jpegBuffer)
+    .avif({ quality: 60 })
+    .toBuffer();
+
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: key,
+      Body: avifBuffer,
+      ContentType: "image/avif",
+    }),
+  );
+
+  return key;
 }
 
 const CITIES = [
@@ -223,12 +266,27 @@ async function seed() {
   }
   console.log(`Cleared ${existing.length} postcards.`);
 
+  // Download images to MinIO first
+  console.log(`Uploading ${CITIES.length} images to MinIO...`);
+  const imageKeys: string[] = [];
+  for (let i = 0; i < CITIES.length; i++) {
+    try {
+      const key = await ensureImage(i);
+      imageKeys.push(key);
+      process.stdout.write(`\rImages: ${i + 1}/${CITIES.length}`);
+    } catch (err) {
+      console.error(`\nFailed to upload image ${i}:`, err);
+      imageKeys.push(`seed/card-0.jpg`); // fallback to first image
+    }
+  }
+  console.log("\nImages ready.");
+
   console.log(`Seeding ${CITIES.length} postcards to ${API_URL}...`);
   let created = 0;
 
   for (let i = 0; i < CITIES.length; i++) {
     const city = CITIES[i];
-    const imageKey = imageUrlForIndex(i);
+    const imageKey = imageKeys[i];
     const message = MESSAGES[i % MESSAGES.length];
     const senderName = NAMES[i % NAMES.length];
 

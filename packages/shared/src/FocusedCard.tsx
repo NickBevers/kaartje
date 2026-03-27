@@ -1,6 +1,7 @@
 import { useRef, useMemo, useEffect, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import * as THREE from "three";
+import { TextureLoader, Vector3, Vector2, DoubleSide, PerspectiveCamera } from "three";
+import type { Mesh, ShaderMaterial, Texture } from "three";
 import { createBackTexture } from "./postcard-back";
 import { latLngToVec3 } from "./geo";
 import type { StampHoverData } from "./PostcardFlightLayer";
@@ -241,8 +242,8 @@ interface FocusedCardProps {
 }
 
 export function FocusedCard({ card, globeRadius, onClose }: FocusedCardProps) {
-  const meshRef = useRef<THREE.Mesh>(null!);
-  const materialRef = useRef<THREE.ShaderMaterial>(null!);
+  const meshRef = useRef<Mesh>(null!);
+  const materialRef = useRef<ShaderMaterial>(null!);
   const camera = useThree((s) => s.camera);
   const gl = useThree((s) => s.gl);
 
@@ -259,10 +260,10 @@ export function FocusedCard({ card, globeRadius, onClose }: FocusedCardProps) {
   const lastPointerX = useRef(0);
   const lastPointerY = useRef(0);
 
-  const [frontTex, setFrontTex] = useState<THREE.Texture | null>(null);
+  const [frontTex, setFrontTex] = useState<Texture | null>(null);
 
   useEffect(() => {
-    const loader = new THREE.TextureLoader();
+    const loader = new TextureLoader();
     loader.setCrossOrigin("anonymous");
     loader.load(card.frontImageUrl, (tex) => setFrontTex(tex));
   }, [card.frontImageUrl]);
@@ -279,20 +280,20 @@ export function FocusedCard({ card, globeRadius, onClose }: FocusedCardProps) {
 
   const startPos = useMemo(() => {
     if (card.worldPosition) {
-      return new THREE.Vector3(...card.worldPosition);
+      return new Vector3(...card.worldPosition);
     }
-    return new THREE.Vector3(
+    return new Vector3(
       ...latLngToVec3(card.latitude, card.longitude, globeRadius * 1.01),
     );
   }, [card.worldPosition, card.latitude, card.longitude, globeRadius]);
 
   const targetPos = useMemo(() => {
-    const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    const dir = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
     return camera.position.clone().add(dir.multiplyScalar(3.5));
   }, [camera]);
 
   const displayScale = useMemo(() => {
-    const vFov = (camera as THREE.PerspectiveCamera).fov * (Math.PI / 180);
+    const vFov = (camera as PerspectiveCamera).fov * (Math.PI / 180);
     const visibleHeight = 2 * Math.tan(vFov / 2) * 3.5;
     return visibleHeight * 0.45;
   }, [camera]);
@@ -305,10 +306,10 @@ export function FocusedCard({ card, globeRadius, onClose }: FocusedCardProps) {
     uRotY: { value: 0 },
     uScale: { value: displayScale },
     uZoom: { value: 1 },
-    uOffset: { value: new THREE.Vector2(0, 0) },
-    uCamRight: { value: new THREE.Vector3(1, 0, 0) },
-    uCamUp: { value: new THREE.Vector3(0, 1, 0) },
-    uCamFwd: { value: new THREE.Vector3(0, 0, -1) },
+    uOffset: { value: new Vector2(0, 0) },
+    uCamRight: { value: new Vector3(1, 0, 0) },
+    uCamUp: { value: new Vector3(0, 1, 0) },
+    uCamFwd: { value: new Vector3(0, 0, -1) },
     uFrontTex: { value: frontTex },
     uBackTex: { value: backTex },
   }).current;
@@ -378,8 +379,9 @@ export function FocusedCard({ card, globeRadius, onClose }: FocusedCardProps) {
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const delta = e.deltaY * -0.001;
-      zoom.current = Math.max(0.3, Math.min(5, zoom.current + delta));
+      // Multiplicative zoom — works well for both trackpad pinch and mouse wheel
+      const factor = e.deltaY > 0 ? 0.95 : 1.05;
+      zoom.current = Math.max(1, Math.min(5, zoom.current * factor));
     };
 
     const onContextMenu = (e: Event) => e.preventDefault();
@@ -452,6 +454,18 @@ export function FocusedCard({ card, globeRadius, onClose }: FocusedCardProps) {
 
   return (
     <>
+      {/* Invisible blocker — absorbs clicks so they don't reach stamps behind */}
+      <mesh
+        position={targetPos}
+        renderOrder={998}
+        onClick={(e) => e.stopPropagation()}
+        onPointerOver={(e) => e.stopPropagation()}
+        onPointerOut={(e) => e.stopPropagation()}
+      >
+        <planeGeometry args={[100, 100]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+
       {/* Card mesh — subdivided for vertex deformation */}
       <mesh ref={meshRef} renderOrder={999}>
         <planeGeometry args={[1, CARD_ASPECT, 12, 8]} />
@@ -462,7 +476,7 @@ export function FocusedCard({ card, globeRadius, onClose }: FocusedCardProps) {
           uniforms={uniforms}
           transparent
           depthTest={false}
-          side={THREE.DoubleSide}
+          side={DoubleSide}
         />
       </mesh>
     </>

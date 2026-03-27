@@ -1,6 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
-import { NetworkSphereView } from '../components/NetworkSphereView';
+import { LazyGlobe } from '../components/LazyGlobe';
 ---
 
 <Base title="Kaartje">
@@ -31,7 +31,7 @@ import { NetworkSphereView } from '../components/NetworkSphereView';
 
     <!-- Globe (fullscreen behind text) -->
     <div id="globe-container" class="absolute inset-0">
-      <NetworkSphereView client:only="react" />
+      <LazyGlobe client:only="react" />
     </div>
   </main>
 </Base>

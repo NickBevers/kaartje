@@ -1,12 +1,14 @@
 import { useRef, useMemo, useEffect, useState, useCallback, memo } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import * as THREE from "three";
+import { DataTexture, RGBAFormat, LinearFilter, RepeatWrapping, Color, BufferGeometry, BufferAttribute } from "three";
+import type { Group, ShaderMaterial } from "three";
 import { LAND_MASK_B64, MASK_W, MASK_H } from "./land-mask";
 import { DOT_STEP, DOTS_B64 } from "./land-dots";
 import { latLngToVec3 } from "./geo";
 import { ArcLayer } from "./ArcLayer";
-import { PostcardFlightLayer, LandedCardStamp, PersistentCardStamp } from "./PostcardFlightLayer";
+import { PostcardFlightLayer } from "./PostcardFlightLayer";
 import type { StampHoverData } from "./PostcardFlightLayer";
+import { InstancedStamps } from "./InstancedStamps";
 import type { ArcTarget, LiveCard } from "./types";
 
 export interface DottedGlobeProps {
@@ -152,7 +154,7 @@ function computeLandDots(step: number, radius: number): LandData {
 // Land mask as a DataTexture (for the inner sphere shader)
 // ---------------------------------------------------------------------------
 
-const MASK_TEXTURE: THREE.DataTexture = (() => {
+const MASK_TEXTURE: DataTexture = (() => {
   const data = new Uint8Array(MASK_W * MASK_H * 4);
   for (let i = 0; i < MASK_W * MASK_H; i++) {
     const isLand = (LAND_MASK[i >> 3] & (1 << (i & 7))) !== 0;
@@ -162,11 +164,11 @@ const MASK_TEXTURE: THREE.DataTexture = (() => {
     data[i * 4 + 2] = v;
     data[i * 4 + 3] = 255;
   }
-  const tex = new THREE.DataTexture(data, MASK_W, MASK_H, THREE.RGBAFormat);
+  const tex = new DataTexture(data, MASK_W, MASK_H, RGBAFormat);
   tex.needsUpdate = true;
-  tex.minFilter = THREE.LinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  tex.wrapS = THREE.RepeatWrapping;
+  tex.minFilter = LinearFilter;
+  tex.magFilter = LinearFilter;
+  tex.wrapS = RepeatWrapping;
   return tex;
 })();
 
@@ -267,7 +269,7 @@ const DotLayer = memo(function DotLayer({
   size: number;
 }) {
   const { gl, size: viewportSize } = useThree();
-  const materialRef = useRef<THREE.ShaderMaterial>(null!);
+  const materialRef = useRef<ShaderMaterial>(null!);
 
   // Scale dots to appear consistent across screen sizes
   // Use the smaller dimension so dots fit both narrow and short screens
@@ -279,14 +281,14 @@ const DotLayer = memo(function DotLayer({
   }, [size, viewportSize.width, viewportSize.height]);
 
   const { geometry, uniforms } = useMemo(() => {
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    geo.setAttribute("aScale", new THREE.BufferAttribute(scales, 1));
+    const geo = new BufferGeometry();
+    geo.setAttribute("position", new BufferAttribute(positions, 3));
+    geo.setAttribute("aScale", new BufferAttribute(scales, 1));
 
     return {
       geometry: geo,
       uniforms: {
-        uColor: { value: new THREE.Color(color) },
+        uColor: { value: new Color(color) },
         uPixelRatio: { value: gl.getPixelRatio() },
         uSize: { value: responsiveSize },
       },
@@ -321,7 +323,7 @@ const DotLayer = memo(function DotLayer({
 // Main export
 // ---------------------------------------------------------------------------
 
-export function DottedGlobe({
+export const DottedGlobe = memo(function DottedGlobe({
   dotStep = 1.1,
   radius = 2.5,
   dotColor = "#ede6db",
@@ -338,7 +340,7 @@ export function DottedGlobe({
   paused = false,
 }: DottedGlobeProps = {}) {
   const arcData = arcs ?? MOCK_ARCS;
-  const groupRef = useRef<THREE.Group>(null!);
+  const groupRef = useRef<Group>(null!);
 
   // Landed cards state: stamps that stick to the rotating globe
   const [landedCards, setLandedCards] = useState<
@@ -411,6 +413,21 @@ export function DottedGlobe({
   // Set initial rotation so Belgium (lng ~4°) faces the camera
   const initialRotation = useRef((180 - 4 + 40) * DEG);
 
+  // Memoize ocean uniforms to avoid recreating on every render
+  const oceanUniforms = useMemo(() => ({
+    uMask: { value: MASK_TEXTURE },
+    uWaterColor: { value: new Color(waterColor) },
+    uLandColor: { value: new Color("#000000") },
+    uWaterOpacity: { value: waterOpacity },
+    uLandOpacity: { value: 0.4 },
+  }), [waterColor, waterOpacity]);
+
+  // Memoize filtered persistent cards to prevent unnecessary slot resyncs
+  const visiblePersistentCards = useMemo(
+    () => persistentCards.filter((c) => !animatingIds.has(c.id)),
+    [persistentCards, animatingIds],
+  );
+
   useFrame((_, delta) => {
     if (!paused) groupRef.current.rotation.y += delta * rotationSpeed;
   });
@@ -424,13 +441,7 @@ export function DottedGlobe({
             <shaderMaterial
               vertexShader={oceanSphereVertex}
               fragmentShader={oceanSphereFragment}
-              uniforms={{
-                uMask: { value: MASK_TEXTURE },
-                uWaterColor: { value: new THREE.Color(waterColor) },
-                uLandColor: { value: new THREE.Color("#000000") },
-                uWaterOpacity: { value: waterOpacity },
-                uLandOpacity: { value: 0.4 },
-              }}
+              uniforms={oceanUniforms}
               transparent
               depthWrite={false}
             />
@@ -443,31 +454,15 @@ export function DottedGlobe({
           />
           {arcData.length > 0 && <ArcLayer arcs={arcData} radius={radius} delay={arcDelay} />}
 
-          {/* Landed card stamps — inside rotating group so they stick to the globe */}
-          {landedCards.map((card) => (
-            <LandedCardStamp
-              key={`landed-${card.id}`}
-              card={card}
-              radius={radius}
-              landedAt={card.landedAt}
-              onExpired={() => handleStampExpired(card.id)}
-              onHover={onCardHover}
-              onSelect={onCardSelect}
-            />
-          ))}
-
-          {/* Persistent stamps — shown immediately except cards still in flight */}
-          {persistentCards
-            .filter((c) => !animatingIds.has(c.id))
-            .map((card) => (
-              <PersistentCardStamp
-                key={`persistent-${card.id}`}
-                card={card}
-                radius={radius}
-                onHover={onCardHover}
-              onSelect={onCardSelect}
-              />
-            ))}
+          {/* All stamps — instanced for performance (single draw call) */}
+          <InstancedStamps
+            persistentCards={visiblePersistentCards}
+            landedCards={landedCards}
+            radius={radius}
+            onHover={onCardHover}
+            onSelect={onCardSelect}
+            onLandedExpired={handleStampExpired}
+          />
         </group>
       </group>
 
@@ -482,4 +477,4 @@ export function DottedGlobe({
       )}
     </>
   );
-}
+});
