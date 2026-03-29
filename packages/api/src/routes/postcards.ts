@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { db } from "../db/client";
 import { postcards } from "../db/schema";
 import type { NewPostcard } from "../db/schema";
@@ -9,13 +9,17 @@ import { coordsForCountry } from "../geo";
 export async function listPostcards(_req: Request): Promise<Response> {
   const url = new URL(_req.url);
   const status = url.searchParams.get("status");
+  const limit = Math.min(Number(url.searchParams.get("limit")) || 50, 200);
 
+  const query = db.select().from(postcards);
   const rows = status
-    ? await db
-        .select()
-        .from(postcards)
+    ? await query
         .where(eq(postcards.status, status as "scanned" | "arriving" | "landed"))
-    : await db.select().from(postcards);
+        .orderBy(desc(postcards.createdAt))
+        .limit(limit)
+    : await query
+        .orderBy(desc(postcards.createdAt))
+        .limit(limit);
 
   const result = rows.map((row) => ({
     id: row.id,

@@ -36,7 +36,10 @@ export async function createPresignedDownloadUrl(key: string) {
 export function getPublicUrl(key: string) {
   // If the key is already an absolute URL, return it directly
   if (key.startsWith("http://") || key.startsWith("https://")) return key;
-  // Serve via the API image proxy (adds CORS headers)
+  // Serve directly from S3/Object Storage (bucket has public-read policy)
+  const publicUrl = process.env.S3_PUBLIC_URL;
+  if (publicUrl) return `${publicUrl}/${key}`;
+  // Fallback: proxy through the API (local dev with MinIO)
   const apiUrl = process.env.PUBLIC_API_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
   return `${apiUrl}/images/${key}`;
 }
