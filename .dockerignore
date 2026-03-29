@@ -8,5 +8,9 @@ dist
 .env
 .env.*
 .DS_Store
-packages/mobile
+packages/mobile/app
+packages/mobile/assets
+packages/mobile/components
+packages/mobile/contexts
+packages/mobile/plugins
 docs
