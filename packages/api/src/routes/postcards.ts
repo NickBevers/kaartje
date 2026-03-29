@@ -1,4 +1,4 @@
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, lt, and } from "drizzle-orm";
 import { db } from "../db/client";
 import { postcards } from "../db/schema";
 import type { NewPostcard } from "../db/schema";
@@ -9,19 +9,22 @@ import { coordsForCountry } from "../geo";
 export async function listPostcards(_req: Request): Promise<Response> {
   const url = new URL(_req.url);
   const status = url.searchParams.get("status");
-  const limit = Math.min(Number(url.searchParams.get("limit")) || 50, 200);
+  const limit = Math.min(Number(url.searchParams.get("limit")) || 10, 50);
+  const cursor = url.searchParams.get("cursor"); // createdAt value for pagination
 
-  const query = db.select().from(postcards);
-  const rows = status
-    ? await query
-        .where(eq(postcards.status, status as "scanned" | "arriving" | "landed"))
-        .orderBy(desc(postcards.createdAt))
-        .limit(limit)
-    : await query
-        .orderBy(desc(postcards.createdAt))
-        .limit(limit);
+  const conditions = [];
+  if (status) conditions.push(eq(postcards.status, status as "scanned" | "arriving" | "landed"));
+  if (cursor) conditions.push(lt(postcards.createdAt, cursor));
 
-  const result = rows.map((row) => ({
+  const rows = conditions.length > 0
+    ? await db.select().from(postcards).where(and(...conditions)).orderBy(desc(postcards.createdAt)).limit(limit + 1)
+    : await db.select().from(postcards).orderBy(desc(postcards.createdAt)).limit(limit + 1);
+
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  const nextCursor = hasMore ? page[page.length - 1].createdAt : null;
+
+  const result = page.map((row) => ({
     id: row.id,
     frontImageUrl: getPublicUrl(row.frontImageKey),
     latitude: row.latitude != null ? Math.round(row.latitude * 100) / 100 : null,
@@ -31,7 +34,7 @@ export async function listPostcards(_req: Request): Promise<Response> {
     country: row.country,
   }));
 
-  return Response.json(result);
+  return Response.json({ postcards: result, nextCursor });
 }
 
 export async function getPostcard(id: string): Promise<Response> {

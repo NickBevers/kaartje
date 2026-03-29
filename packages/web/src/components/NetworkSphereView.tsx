@@ -58,27 +58,51 @@ export function NetworkSphereView() {
   // Single API client instance
   const client = useMemo(() => new ApiClient({ baseUrl: API_BASE_URL }), []);
 
-  // Fetch all existing postcards from the database on mount
+  // Fetch postcards in batches of 10 to avoid loading all textures at once
   useEffect(() => {
-    client
-      .listPostcards()
-      .then((postcards) => {
-        const cards: LiveCard[] = postcards
-          .filter((p) => p.latitude != null && p.longitude != null && p.frontImageUrl)
-          .map((p) => ({
-            id: p.id,
-            frontImageUrl: p.frontImageUrl,
-            latitude: p.latitude as number,
-            longitude: p.longitude as number,
-            senderName: p.senderName ?? undefined,
-            message: p.message ?? undefined,
-            country: p.country ?? undefined,
-          }));
-        setPersistentCards(cards);
-      })
-      .catch((err) => {
-        console.warn("[API] Failed to fetch postcards:", err);
-      });
+    let cancelled = false;
+    const BATCH_SIZE = 10;
+    const BATCH_DELAY = 600; // ms between batches
+
+    async function fetchBatches() {
+      let cursor: string | null = null;
+
+      while (!cancelled) {
+        try {
+          const { postcards, nextCursor } = await client.listPostcards({ limit: BATCH_SIZE, cursor: cursor ?? undefined });
+
+          if (cancelled) break;
+
+          const cards: LiveCard[] = postcards
+            .filter((p) => p.latitude != null && p.longitude != null && p.frontImageUrl)
+            .map((p) => ({
+              id: p.id,
+              frontImageUrl: p.frontImageUrl,
+              latitude: p.latitude as number,
+              longitude: p.longitude as number,
+              senderName: p.senderName ?? undefined,
+              message: p.message ?? undefined,
+              country: p.country ?? undefined,
+            }));
+
+          if (cards.length > 0) {
+            setPersistentCards((prev) => [...prev, ...cards]);
+          }
+
+          if (!nextCursor) break;
+          cursor = nextCursor;
+
+          // Wait between batches to let textures load
+          await new Promise((r) => setTimeout(r, BATCH_DELAY));
+        } catch (err) {
+          console.warn("[API] Failed to fetch postcards:", err);
+          break;
+        }
+      }
+    }
+
+    fetchBatches();
+    return () => { cancelled = true; };
   }, [client]);
 
   // WebSocket connection for live postcard events

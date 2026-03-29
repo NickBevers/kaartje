@@ -45,9 +45,13 @@ export class ApiClient {
   // Postcards
   // ---------------------------------------------------------------------------
 
-  async listPostcards(status?: PostcardStatus): Promise<Postcard[]> {
-    const query = status ? `?status=${status}` : "";
-    return this.request<Postcard[]>(`/postcards${query}`);
+  async listPostcards(options?: { status?: PostcardStatus; limit?: number; cursor?: string }): Promise<{ postcards: Postcard[]; nextCursor: string | null }> {
+    const params = new URLSearchParams();
+    if (options?.status) params.set("status", options.status);
+    if (options?.limit) params.set("limit", String(options.limit));
+    if (options?.cursor) params.set("cursor", options.cursor);
+    const query = params.toString() ? `?${params}` : "";
+    return this.request<{ postcards: Postcard[]; nextCursor: string | null }>(`/postcards${query}`);
   }
 
   async getPostcard(id: string): Promise<Postcard> {
