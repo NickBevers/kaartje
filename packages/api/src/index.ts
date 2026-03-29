@@ -89,24 +89,35 @@ const server = Bun.serve({
         return handleUpload(req);
       }
 
-      // GET /images/* — proxy MinIO images with CORS headers
+      // GET /images/* — proxy S3 images with authentication
       if (pathname.startsWith("/images/") && method === "GET") {
-        const key = pathname.slice("/images/".length);
-        // Always fetch from MinIO on localhost (S3_ENDPOINT may be a LAN IP for external clients)
-        const s3Endpoint = process.env.S3_INTERNAL_ENDPOINT ?? "http://127.0.0.1:9000";
-        const s3Bucket = process.env.S3_BUCKET ?? "kaartje-postcards";
-        const upstreamUrl = `${s3Endpoint}/${s3Bucket}/${key}`;
-        const upstream = await fetch(upstreamUrl);
-        if (!upstream.ok) {
-          console.warn(`[images] ${upstream.status} for ${upstreamUrl}`);
+        const key = decodeURIComponent(pathname.slice("/images/".length));
+        try {
+          const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+          const { s3 } = await import("./storage/s3");
+          const command = new GetObjectCommand({
+            Bucket: process.env.S3_BUCKET ?? "kaartje-postcards",
+            Key: key,
+          });
+          const response = await s3.send(command);
+          const body = response.Body;
+          if (!body) {
+            return Response.json({ error: "Image not found" }, { status: 404 });
+          }
+          return new Response(body as ReadableStream, {
+            headers: {
+              "Content-Type": response.ContentType ?? "image/avif",
+              "Content-Length": String(response.ContentLength ?? ""),
+              "Cache-Control": "public, max-age=31536000, immutable",
+            },
+          });
+        } catch (err: any) {
+          if (err?.name === "NoSuchKey" || err?.$metadata?.httpStatusCode === 404) {
+            return Response.json({ error: "Image not found" }, { status: 404 });
+          }
+          console.warn(`[images] Error fetching ${key}:`, err?.message);
           return Response.json({ error: "Image not found" }, { status: 404 });
         }
-        return new Response(upstream.body, {
-          headers: {
-            "Content-Type": upstream.headers.get("Content-Type") ?? "image/jpeg",
-            "Cache-Control": "public, max-age=31536000, immutable",
-          },
-        });
       }
 
       // GET /postcards
