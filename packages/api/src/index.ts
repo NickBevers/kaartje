@@ -3,8 +3,9 @@ import {
   getPostcard,
   createPostcard,
   updatePostcardStatus,
+  deletePostcard,
 } from "./routes/postcards";
-import { handlePresign } from "./routes/uploads";
+import { handlePresign, handleUpload } from "./routes/uploads";
 import { websocket, broadcast } from "./ws/handler";
 
 const port = Number(process.env.PORT) || 3000;
@@ -29,7 +30,7 @@ const server = Bun.serve({
     // CORS headers for all responses
     const corsHeaders = {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
     };
 
@@ -64,8 +65,8 @@ const server = Bun.serve({
               message: body.message ?? null,
               senderName: body.senderName ?? "Test",
               country: body.country ?? null,
-              latitude: body.latitude ?? 48.8566,
-              longitude: body.longitude ?? 2.3522,
+              latitude: body.latitude ?? 51.2194,
+              longitude: body.longitude ?? 4.4025,
               frontImageKey: "fake",
               backImageKey: null,
               frontImageUrl: body.frontImageUrl ?? "https://picsum.photos/400/267",
@@ -83,6 +84,31 @@ const server = Bun.serve({
         return handlePresign(req);
       }
 
+      // POST /uploads — direct upload with AVIF conversion
+      if (pathname === "/uploads" && method === "POST") {
+        return handleUpload(req);
+      }
+
+      // GET /images/* — proxy MinIO images with CORS headers
+      if (pathname.startsWith("/images/") && method === "GET") {
+        const key = pathname.slice("/images/".length);
+        // Always fetch from MinIO on localhost (S3_ENDPOINT may be a LAN IP for external clients)
+        const s3Endpoint = process.env.S3_INTERNAL_ENDPOINT ?? "http://127.0.0.1:9000";
+        const s3Bucket = process.env.S3_BUCKET ?? "kaartje-postcards";
+        const upstreamUrl = `${s3Endpoint}/${s3Bucket}/${key}`;
+        const upstream = await fetch(upstreamUrl);
+        if (!upstream.ok) {
+          console.warn(`[images] ${upstream.status} for ${upstreamUrl}`);
+          return Response.json({ error: "Image not found" }, { status: 404 });
+        }
+        return new Response(upstream.body, {
+          headers: {
+            "Content-Type": upstream.headers.get("Content-Type") ?? "image/jpeg",
+            "Cache-Control": "public, max-age=31536000, immutable",
+          },
+        });
+      }
+
       // GET /postcards
       if (pathname === "/postcards" && method === "GET") {
         return listPostcards(req);
@@ -97,6 +123,11 @@ const server = Bun.serve({
       const getMatch = pathname.match(/^\/postcards\/([^/]+)$/);
       if (getMatch && method === "GET") {
         return getPostcard(getMatch[1]);
+      }
+
+      // DELETE /postcards/:id
+      if (getMatch && method === "DELETE") {
+        return deletePostcard(getMatch[1]);
       }
 
       // PATCH /postcards/:id/status
