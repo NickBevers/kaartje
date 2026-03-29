@@ -19,7 +19,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.kaartje-api.rule=Host(`kaartje.earth`) && (PathPrefix(`/postcards`) || PathPrefix(`/uploads`) || PathPrefix(`/health`) || PathPrefix(`/ws`) || PathPrefix(`/dev`) || PathPrefix(`/images`))"
-      - "traefik.http.routers.kaartje-api.entrypoints=https"
+      - "traefik.http.routers.kaartje-api.entrypoints=http,https"
       - "traefik.http.routers.kaartje-api.tls=true"
       - "traefik.http.routers.kaartje-api.tls.certresolver=letsencrypt"
       - "traefik.http.services.kaartje-api.loadbalancer.server.port=3000"
@@ -37,7 +37,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.kaartje-web.rule=Host(`kaartje.earth`)"
       - "traefik.http.routers.kaartje-web.priority=1"
-      - "traefik.http.routers.kaartje-web.entrypoints=https"
+      - "traefik.http.routers.kaartje-web.entrypoints=http,https"
       - "traefik.http.routers.kaartje-web.tls=true"
       - "traefik.http.routers.kaartje-web.tls.certresolver=letsencrypt"
       - "traefik.http.services.kaartje-web.loadbalancer.server.port=4321"
