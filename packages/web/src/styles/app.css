@@ -76,6 +76,12 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  overscroll-behavior: none;
+}
+
+body {
+  overscroll-behavior: none;
+  touch-action: none;
 }
 
 ::selection {
