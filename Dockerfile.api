@@ -1,0 +1,21 @@
+FROM node:22-slim AS deps
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY packages/api/package.json packages/api/
+COPY packages/shared/package.json packages/shared/
+COPY packages/web/package.json packages/web/
+COPY packages/mobile/package.json packages/mobile/
+
+RUN npm ci
+
+FROM oven/bun:1
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY packages/api packages/api
+COPY packages/shared packages/shared
+COPY package.json tsconfig.json ./
+
+EXPOSE 3000
+CMD ["bun", "run", "packages/api/src/index.ts"]

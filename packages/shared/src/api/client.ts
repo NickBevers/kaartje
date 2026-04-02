@@ -9,14 +9,17 @@ import type {
 
 export interface ApiClientOptions {
   baseUrl: string;
+  apiKey?: string;
 }
 
 export class ApiClient {
   private baseUrl: string;
+  private apiKey?: string;
 
-  constructor({ baseUrl }: ApiClientOptions) {
+  constructor({ baseUrl, apiKey }: ApiClientOptions) {
     // Strip trailing slash
     this.baseUrl = baseUrl.replace(/\/+$/, "");
+    this.apiKey = apiKey;
   }
 
   // ---------------------------------------------------------------------------
@@ -24,12 +27,17 @@ export class ApiClient {
   // ---------------------------------------------------------------------------
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...init?.headers as Record<string, string>,
+    };
+    if (this.apiKey) {
+      headers["X-API-Key"] = this.apiKey;
+    }
+
     const res = await fetch(`${this.baseUrl}${path}`, {
       ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...init?.headers,
-      },
+      headers,
     });
 
     if (!res.ok) {
@@ -45,9 +53,13 @@ export class ApiClient {
   // Postcards
   // ---------------------------------------------------------------------------
 
-  async listPostcards(status?: PostcardStatus): Promise<Postcard[]> {
-    const query = status ? `?status=${status}` : "";
-    return this.request<Postcard[]>(`/postcards${query}`);
+  async listPostcards(options?: { status?: PostcardStatus; limit?: number; cursor?: string }): Promise<{ postcards: Postcard[]; nextCursor: string | null }> {
+    const params = new URLSearchParams();
+    if (options?.status) params.set("status", options.status);
+    if (options?.limit) params.set("limit", String(options.limit));
+    if (options?.cursor) params.set("cursor", options.cursor);
+    const query = params.toString() ? `?${params}` : "";
+    return this.request<{ postcards: Postcard[]; nextCursor: string | null }>(`/postcards${query}`);
   }
 
   async getPostcard(id: string): Promise<Postcard> {

@@ -9,6 +9,25 @@ import { handlePresign, handleUpload } from "./routes/uploads";
 import { websocket, broadcast } from "./ws/handler";
 
 const port = Number(process.env.PORT) || 3000;
+const API_KEY = process.env.API_KEY;
+
+// Routes that require API key authentication
+const PROTECTED_PREFIXES = ["/postcards", "/uploads", "/images/"];
+
+function requiresAuth(pathname: string): boolean {
+  return PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+function isAuthorized(req: Request): boolean {
+  if (!API_KEY) return true; // No key configured = no auth (local dev)
+  // Check header (API/fetch calls)
+  const header = req.headers.get("X-API-Key");
+  if (header === API_KEY) return true;
+  // Check query param (for <img> tags that can't set headers)
+  const url = new URL(req.url);
+  const queryKey = url.searchParams.get("key");
+  return queryKey === API_KEY;
+}
 
 const server = Bun.serve({
   port,
@@ -31,12 +50,20 @@ const server = Bun.serve({
     const corsHeaders = {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Headers": "Content-Type, X-API-Key",
     };
 
     // Preflight
     if (method === "OPTIONS") {
       return new Response(null, { status: 204, headers: corsHeaders });
+    }
+
+    // API key check for protected routes
+    if (requiresAuth(pathname) && !isAuthorized(req)) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
     }
 
     // Route matching
@@ -89,24 +116,35 @@ const server = Bun.serve({
         return handleUpload(req);
       }
 
-      // GET /images/* — proxy MinIO images with CORS headers
+      // GET /images/* — proxy S3 images with authentication
       if (pathname.startsWith("/images/") && method === "GET") {
-        const key = pathname.slice("/images/".length);
-        // Always fetch from MinIO on localhost (S3_ENDPOINT may be a LAN IP for external clients)
-        const s3Endpoint = process.env.S3_INTERNAL_ENDPOINT ?? "http://127.0.0.1:9000";
-        const s3Bucket = process.env.S3_BUCKET ?? "kaartje-postcards";
-        const upstreamUrl = `${s3Endpoint}/${s3Bucket}/${key}`;
-        const upstream = await fetch(upstreamUrl);
-        if (!upstream.ok) {
-          console.warn(`[images] ${upstream.status} for ${upstreamUrl}`);
+        const key = decodeURIComponent(pathname.slice("/images/".length));
+        try {
+          const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+          const { s3 } = await import("./storage/s3");
+          const command = new GetObjectCommand({
+            Bucket: process.env.S3_BUCKET ?? "kaartje-postcards",
+            Key: key,
+          });
+          const response = await s3.send(command);
+          const body = response.Body;
+          if (!body) {
+            return Response.json({ error: "Image not found" }, { status: 404 });
+          }
+          return new Response(body as ReadableStream, {
+            headers: {
+              "Content-Type": response.ContentType ?? "image/avif",
+              "Content-Length": String(response.ContentLength ?? ""),
+              "Cache-Control": "public, max-age=31536000, immutable",
+            },
+          });
+        } catch (err: any) {
+          if (err?.name === "NoSuchKey" || err?.$metadata?.httpStatusCode === 404) {
+            return Response.json({ error: "Image not found" }, { status: 404 });
+          }
+          console.warn(`[images] Error fetching ${key}:`, err?.message);
           return Response.json({ error: "Image not found" }, { status: 404 });
         }
-        return new Response(upstream.body, {
-          headers: {
-            "Content-Type": upstream.headers.get("Content-Type") ?? "image/jpeg",
-            "Cache-Control": "public, max-age=31536000, immutable",
-          },
-        });
       }
 
       // GET /postcards

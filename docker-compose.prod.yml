@@ -1,0 +1,75 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      - PORT=3000
+      - TURSO_DATABASE_URL=http://libsql:8080
+      - TURSO_AUTH_TOKEN=
+      - S3_ENDPOINT=${S3_ENDPOINT}
+      - S3_PUBLIC_URL=${S3_PUBLIC_URL}
+      - S3_BUCKET=${S3_BUCKET}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY}
+      - S3_INTERNAL_ENDPOINT=${S3_ENDPOINT}
+      - PUBLIC_API_URL=https://kaartje.earth
+      - API_KEY=${API_KEY}
+    depends_on:
+      - libsql
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.kaartje-api.rule=Host(`kaartje.earth`) && (PathPrefix(`/postcards`) || PathPrefix(`/uploads`) || PathPrefix(`/health`) || PathPrefix(`/ws`) || PathPrefix(`/dev`) || PathPrefix(`/images`))"
+      - "traefik.http.routers.kaartje-api.entrypoints=http,https"
+      - "traefik.http.routers.kaartje-api.tls=true"
+      - "traefik.http.routers.kaartje-api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.kaartje-api.loadbalancer.server.port=3000"
+    networks:
+      - default
+      - coolify
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        PUBLIC_API_URL: https://kaartje.earth
+        PUBLIC_API_KEY: ${API_KEY}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.kaartje-web.rule=Host(`kaartje.earth`)"
+      - "traefik.http.routers.kaartje-web.priority=1"
+      - "traefik.http.routers.kaartje-web.entrypoints=http,https"
+      - "traefik.http.routers.kaartje-web.tls=true"
+      - "traefik.http.routers.kaartje-web.tls.certresolver=letsencrypt"
+      - "traefik.http.services.kaartje-web.loadbalancer.server.port=4321"
+    networks:
+      - default
+      - coolify
+
+  # Restart Traefik after deploy so it picks up new container labels
+  proxy-reload:
+    image: docker:cli
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: sh -c "sleep 5 && docker restart coolify-proxy"
+    depends_on:
+      - api
+      - web
+    restart: "no"
+    networks:
+      - default
+
+  libsql:
+    image: ghcr.io/tursodatabase/libsql-server:latest
+    volumes:
+      - libsql-data:/var/lib/sqld
+    networks:
+      - default
+
+volumes:
+  libsql-data:
+
+networks:
+  coolify:
+    external: true

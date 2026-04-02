@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, desc, lt, and } from "drizzle-orm";
 import { db } from "../db/client";
 import { postcards } from "../db/schema";
 import type { NewPostcard } from "../db/schema";
@@ -9,21 +9,32 @@ import { coordsForCountry } from "../geo";
 export async function listPostcards(_req: Request): Promise<Response> {
   const url = new URL(_req.url);
   const status = url.searchParams.get("status");
+  const limit = Math.min(Number(url.searchParams.get("limit")) || 10, 50);
+  const cursor = url.searchParams.get("cursor"); // createdAt value for pagination
 
-  const rows = status
-    ? await db
-        .select()
-        .from(postcards)
-        .where(eq(postcards.status, status as "scanned" | "arriving" | "landed"))
-    : await db.select().from(postcards);
+  const conditions = [];
+  if (status) conditions.push(eq(postcards.status, status as "scanned" | "arriving" | "landed"));
+  if (cursor) conditions.push(lt(postcards.createdAt, cursor));
 
-  const result = rows.map((row) => ({
-    ...row,
+  const rows = conditions.length > 0
+    ? await db.select().from(postcards).where(and(...conditions)).orderBy(desc(postcards.createdAt)).limit(limit + 1)
+    : await db.select().from(postcards).orderBy(desc(postcards.createdAt)).limit(limit + 1);
+
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  const nextCursor = hasMore ? page[page.length - 1].createdAt : null;
+
+  const result = page.map((row) => ({
+    id: row.id,
     frontImageUrl: getPublicUrl(row.frontImageKey),
-    backImageUrl: row.backImageKey ? getPublicUrl(row.backImageKey) : null,
+    latitude: row.latitude != null ? Math.round(row.latitude * 100) / 100 : null,
+    longitude: row.longitude != null ? Math.round(row.longitude * 100) / 100 : null,
+    senderName: row.senderName,
+    message: row.message,
+    country: row.country,
   }));
 
-  return Response.json(result);
+  return Response.json({ postcards: result, nextCursor });
 }
 
 export async function getPostcard(id: string): Promise<Response> {
@@ -34,9 +45,13 @@ export async function getPostcard(id: string): Promise<Response> {
   }
 
   return Response.json({
-    ...row,
+    id: row.id,
     frontImageUrl: getPublicUrl(row.frontImageKey),
-    backImageUrl: row.backImageKey ? getPublicUrl(row.backImageKey) : null,
+    latitude: row.latitude != null ? Math.round(row.latitude * 100) / 100 : null,
+    longitude: row.longitude != null ? Math.round(row.longitude * 100) / 100 : null,
+    senderName: row.senderName,
+    message: row.message,
+    country: row.country,
   });
 }
 
@@ -86,25 +101,22 @@ export async function createPostcard(req: Request): Promise<Response> {
 
   const [created] = await db.select().from(postcards).where(eq(postcards.id, id));
 
+  const publicPostcard = {
+    id: created.id,
+    frontImageUrl: getPublicUrl(created.frontImageKey),
+    latitude: created.latitude != null ? Math.round(created.latitude * 100) / 100 : null,
+    longitude: created.longitude != null ? Math.round(created.longitude * 100) / 100 : null,
+    senderName: created.senderName,
+    message: created.message,
+    country: created.country,
+  };
+
   broadcast({
     event: "card:scanned",
-    data: {
-      postcard: {
-        ...created,
-        frontImageUrl: getPublicUrl(created.frontImageKey),
-        backImageUrl: created.backImageKey ? getPublicUrl(created.backImageKey) : null,
-      },
-    },
+    data: { postcard: publicPostcard },
   });
 
-  return Response.json(
-    {
-      ...created,
-      frontImageUrl: getPublicUrl(created.frontImageKey),
-      backImageUrl: created.backImageKey ? getPublicUrl(created.backImageKey) : null,
-    },
-    { status: 201 },
-  );
+  return Response.json(publicPostcard, { status: 201 });
 }
 
 export async function updatePostcardStatus(id: string, req: Request): Promise<Response> {

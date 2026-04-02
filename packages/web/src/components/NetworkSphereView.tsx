@@ -7,6 +7,7 @@ import { ApiClient } from "@kaartje/shared/api";
 import type { WsEvent } from "@kaartje/shared/api";
 
 const API_BASE_URL = import.meta.env.PUBLIC_API_URL ?? "http://localhost:3000";
+const API_KEY = import.meta.env.PUBLIC_API_KEY ?? "";
 
 const MIN_DELAY_MS = 800;
 
@@ -56,29 +57,67 @@ export function NetworkSphereView() {
   }, [tryReveal]);
 
   // Single API client instance
-  const client = useMemo(() => new ApiClient({ baseUrl: API_BASE_URL }), []);
+  const client = useMemo(() => new ApiClient({ baseUrl: API_BASE_URL, apiKey: API_KEY }), []);
 
-  // Fetch all existing postcards from the database on mount
+  // Fetch postcards in batches, preload each image before adding to globe
   useEffect(() => {
-    client
-      .listPostcards()
-      .then((postcards) => {
-        const cards: LiveCard[] = postcards
-          .filter((p) => p.latitude != null && p.longitude != null && p.frontImageUrl)
-          .map((p) => ({
-            id: p.id,
-            frontImageUrl: p.frontImageUrl,
-            latitude: p.latitude as number,
-            longitude: p.longitude as number,
-            senderName: p.senderName ?? undefined,
-            message: p.message ?? undefined,
-            country: p.country ?? undefined,
-          }));
-        setPersistentCards(cards);
-      })
-      .catch((err) => {
-        console.warn("[API] Failed to fetch postcards:", err);
+    let cancelled = false;
+    const BATCH_SIZE = 10;
+    const BATCH_DELAY = 300; // ms between batches
+
+    function preloadImage(url: string): Promise<void> {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => resolve();
+        img.onerror = () => resolve(); // skip failed images, don't block
+        img.src = url;
       });
+    }
+
+    async function fetchBatches() {
+      let cursor: string | null = null;
+
+      while (!cancelled) {
+        try {
+          const { postcards, nextCursor } = await client.listPostcards({ limit: BATCH_SIZE, cursor: cursor ?? undefined });
+
+          if (cancelled) break;
+
+          const cards: LiveCard[] = postcards
+            .filter((p) => p.latitude != null && p.longitude != null && p.frontImageUrl)
+            .map((p) => ({
+              id: p.id,
+              frontImageUrl: p.frontImageUrl,
+              latitude: p.latitude as number,
+              longitude: p.longitude as number,
+              senderName: p.senderName ?? undefined,
+              message: p.message ?? undefined,
+              country: p.country ?? undefined,
+            }));
+
+          if (cards.length > 0) {
+            // Preload all images in this batch before adding cards to the globe
+            await Promise.all(cards.map((c) => preloadImage(c.frontImageUrl)));
+            if (!cancelled) {
+              setPersistentCards((prev) => [...prev, ...cards]);
+            }
+          }
+
+          if (!nextCursor) break;
+          cursor = nextCursor;
+
+          // Brief pause between batches
+          await new Promise((r) => setTimeout(r, BATCH_DELAY));
+        } catch (err) {
+          console.warn("[API] Failed to fetch postcards:", err);
+          break;
+        }
+      }
+    }
+
+    fetchBatches();
+    return () => { cancelled = true; };
   }, [client]);
 
   // WebSocket connection for live postcard events
